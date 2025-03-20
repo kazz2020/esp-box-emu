@@ -179,34 +179,3 @@ pokemon_yellow.gbc, boxart/pokemon_yellow.jpg, Pokemon Yellow
 links_awakening.gb, boxart/tloz_links_awakening.jpg, The Legend of Zelda: Link's Awakening
 links_awakening.gbc, boxart/tloz_links_awakening_dx.jpg, The Legend of Zelda: Link's Awakening DX
 ```
-
-## References and Inspiration:
-
-### Other NES Emulators
-* https://github.com/nesemu/NESemu
-* https://github.com/NiwakaDev/NIWAKA_NES
-* https://github.com/kanathan/plainNES
-* https://github.com/blagalucianflorin/lbnes
-* https://github.com/daniel5151/ANESE
-* https://github.com/Grandduchy/YaNES
-
-### Other Genesis Emulators
-* https://github.com/h1romas4/m5stack-genplus
-* https://github.com/libretro/blastem
-
-### Useful Background / Information
-* https://github.com/alnacle/awesome-emulators
-* https://www.zophar.net/nes.html
-* https://yizhang82.dev/nes-emu-overview
-* https://www.gridbugs.org/zelda-screen-transitions-are-undefined-behaviour/
-* https://bgb.bircd.org/pandocs.htm
-* https://github.com/pebri86/esplay-gb
-* https://github.com/hex007/esp32-gnuboy
-* https://github.com/rofl0r/gnuboy
-* https://github.com/zid/gameboy
-* https://github.com/Jean-MarcHarvengt/MCUME
-* https://github.com/OtherCrashOverride/go-play
-* [SNES Signal Reference](https://gamefaqs.gamespot.com/snes/916396-super-nintendo/faqs/5395)
-* [NES Signal Reference](https://wiki.nesdev.com/w/index.php/Standard_controller)
-* [Genesis Signal Reference](https://www.raspberryfield.life/2019/03/25/sega-mega-drive-genesis-6-button-xyz-controller/)
-* [DIY Gameboy](https://learn.adafruit.com/pigrrl-raspberry-pi-gameboy/overview)
