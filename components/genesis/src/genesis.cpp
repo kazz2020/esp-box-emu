@@ -2,6 +2,8 @@
 
 #pragma GCC optimize("Ofast")
 
+#include "genesis_shared_memory.hpp"
+
 extern "C" {
 /* Gwenesis Emulator */
 #include "m68k.h"
@@ -25,7 +27,7 @@ static constexpr size_t GENESIS_SCREEN_WIDTH = 320;
 static constexpr size_t GENESIS_VISIBLE_HEIGHT = 224;
 
 static constexpr size_t PALETTE_SIZE = 256;
-static uint16_t palette[PALETTE_SIZE];
+static uint16_t *palette = nullptr;
 
 static int frame_counter = 0;
 static uint16_t muteFrameCount = 0;
@@ -34,7 +36,6 @@ static uint8_t *frame_buffer = nullptr;
 
 /// BEGIN GWENESIS EMULATOR
 
-extern unsigned char* VRAM;
 extern int zclk;
 static int system_clock;
 int scan_line;
@@ -53,16 +54,11 @@ static int frameskip = full_frameskip;
 static FILE *savestate_fp = NULL;
 static int savestate_errors = 0;
 
-uint8_t *M68K_RAM = nullptr; // MAX_RAM_SIZE
-uint8_t *ZRAM = nullptr; // MAX_Z80_RAM_SIZE
+int32_t *lfo_pm_table = nullptr; // 128*8*32*sizeof(int32_t) = 131072 bytes
 
-int32_t *lfo_pm_table = nullptr; // 128*8*32
-
-signed int *tl_tab = nullptr; // 13*2*TL_RES_LEN (13*2*256)
-
-extern unsigned char gwenesis_vdp_regs[0x20];
+extern unsigned char *gwenesis_vdp_regs; // [0x20];
 extern unsigned int gwenesis_vdp_status;
-extern unsigned short CRAM565[256];
+extern unsigned short *CRAM565; // [256];
 extern unsigned int screen_width, screen_height;
 extern int hint_pending;
 
@@ -145,21 +141,19 @@ void reset_genesis() {
 }
 
 static void init(uint8_t *romdata, size_t rom_data_size) {
-  static bool initialized = false;
-  if (!initialized) {
-    VRAM = (uint8_t*)heap_caps_malloc(VRAM_MAX_SIZE, MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
-    gwenesis_sn76489_buffer = (int16_t*)heap_caps_malloc(AUDIO_BUFFER_LENGTH * sizeof(int16_t), MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
-    gwenesis_ym2612_buffer = (int16_t*)heap_caps_malloc(AUDIO_BUFFER_LENGTH * sizeof(int16_t), MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
-    M68K_RAM = (uint8_t*)heap_caps_malloc(MAX_RAM_SIZE, MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
-    ZRAM = (uint8_t*)heap_caps_malloc(MAX_Z80_RAM_SIZE, MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
-    lfo_pm_table = (int32_t*)heap_caps_malloc(128*8*32 * sizeof(int32_t), MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
-    tl_tab = (signed int*)heap_caps_malloc(13*2*256 * sizeof(signed int), MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
-  }
+  genesis_init_shared_memory();
+
+  // local shared memory (used in this file):
+  palette = (uint16_t*)shared_malloc(sizeof(uint16_t) * PALETTE_SIZE);
+  gwenesis_sn76489_buffer = (int16_t*)shared_malloc(AUDIO_BUFFER_LENGTH * sizeof(int16_t));
+  gwenesis_ym2612_buffer = (int16_t*)shared_malloc(AUDIO_BUFFER_LENGTH * sizeof(int16_t));
+
+  // PSRAM (too big for shared mem):
+  M68K_RAM = (uint8_t*)heap_caps_malloc(MAX_RAM_SIZE, MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM); // 0x10000 (64kB) for M68K RAM
+  lfo_pm_table = (int32_t*)heap_caps_malloc(128*8*32 * sizeof(int32_t), MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
 
   load_cartridge(romdata, rom_data_size);
-
   power_on();
-
   reset_genesis();
 
   frame_counter = 0;
@@ -172,7 +166,8 @@ static void init(uint8_t *romdata, size_t rom_data_size) {
     : BoxEmu::get().frame_buffer0();
   gwenesis_vdp_set_buffer(frame_buffer);
 
-  initialized = true;
+  fmt::print("Num bytes allocated: {}\n", shared_num_bytes_allocated());
+
   reset_frame_time();
 }
 
@@ -305,7 +300,7 @@ void IRAM_ATTR run_genesis_rom() {
   }
 
   // reset m68k cycles to the begin of next frame cycle
-  m68k.cycles -= system_clock;
+  m68k->cycles -= system_clock;
 
   if (drawFrame) {
     // copy the palette
@@ -369,10 +364,18 @@ void save_genesis(std::string_view save_path) {
   fclose(savestate_fp);
 }
 
-std::vector<uint8_t> get_genesis_video_buffer() {
+std::span<uint8_t> get_genesis_video_buffer() {
   static constexpr int height = GENESIS_VISIBLE_HEIGHT;
   static constexpr int width = GENESIS_SCREEN_WIDTH;
-  std::vector<uint8_t> frame(width * height * 2);
+
+  auto *span_buffer = !frame_buffer_index
+    ? BoxEmu::get().frame_buffer1()
+    : BoxEmu::get().frame_buffer0();
+
+  // make a span from the _other_ frame buffer so we can reuse memory
+  // this is a bit of a hack, but it works
+  std::span<uint8_t> frame(span_buffer, width * height * 2);
+
   // the frame data for genesis is stored in the frame buffer as 8 bit palette
   // indexes, so we need to convert it to 16 bit color
   const uint8_t *buffer = (const uint8_t*)frame_buffer;
@@ -386,4 +389,7 @@ std::vector<uint8_t> get_genesis_video_buffer() {
 
 void deinit_genesis() {
   BoxEmu::get().audio_sample_rate(48000);
+  shared_mem_clear();
+  free(M68K_RAM);
+  free(lfo_pm_table);
 }

@@ -45,15 +45,7 @@ public:
 
   void init() {
 #if defined(ENABLE_MSX)
-    switch (info_.platform) {
-    case Emulator::MSX:
-      logger_.info("msx::init()");
-      init_msx(romdata_, rom_size_bytes_);
-      break;
-    default:
-      logger_.error("unknown platform");
-      return;
-    }
+    init_msx(get_rom_filename(), romdata_, rom_size_bytes_);
 #endif
   }
 
@@ -74,7 +66,7 @@ public:
 protected:
   // MSX
   static constexpr size_t MSX_WIDTH = 256;
-  static constexpr size_t MSX_HEIGHT = 192;
+  static constexpr size_t MSX_HEIGHT = 228;
 
   // cppcheck-suppress uselessOverride
   virtual void pre_menu() override {
@@ -95,7 +87,7 @@ protected:
   virtual void set_original_video_setting() override {
 #if defined(ENABLE_MSX)
     logger_.info("msx::video: original");
-    set_msx_video_original();
+    BoxEmu::get().display_size(MSX_WIDTH, MSX_HEIGHT);
 #endif
   }
 
@@ -104,25 +96,27 @@ protected:
   }
 
   // cppcheck-suppress uselessOverride
-  virtual std::vector<uint8_t> get_video_buffer() const override {
+  virtual std::span<uint8_t> get_video_buffer() const override {
 #if defined(ENABLE_MSX)
     return get_msx_video_buffer();
 #else
-    return std::vector<uint8_t>();
+    return std::span<uint8_t>();
 #endif
   }
 
   virtual void set_fit_video_setting() override {
 #if defined(ENABLE_MSX)
     logger_.info("msx::video: fit");
-    set_msx_video_fit();
+    float x_scale = static_cast<float>(SCREEN_HEIGHT) / static_cast<float>(MSX_HEIGHT);
+    int new_width = static_cast<int>(static_cast<float>(MSX_WIDTH) * x_scale);
+    BoxEmu::get().display_size(new_width, SCREEN_HEIGHT);
 #endif
   }
 
   virtual void set_fill_video_setting() override {
 #if defined(ENABLE_MSX)
     logger_.info("msx::video: fill");
-    set_msx_video_fill();
+    BoxEmu::get().display_size(SCREEN_WIDTH, SCREEN_HEIGHT);
 #endif
   }
 

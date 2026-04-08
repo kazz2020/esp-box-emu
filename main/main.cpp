@@ -24,8 +24,6 @@ extern "C" void app_main(void) {
   logger.info("Bootup");
 
   // initialize the hardware abstraction layer
-  espp::EspBox &box = espp::EspBox::get();
-  logger.info("Running on {}", box.box_type());
   BoxEmu &emu = BoxEmu::get();
   logger.info("Box Emu version: {}", emu.version());
 
@@ -67,7 +65,7 @@ extern "C" void app_main(void) {
 
   logger.info("initializing gui...");
 
-  auto display = box.display();
+  auto display = BoxEmu::Bsp::get().display();
 
   // initialize the gui
   Gui gui({
@@ -90,6 +88,7 @@ extern "C" void app_main(void) {
     }
 
     // have broken out of the loop, let the user know we're processing...
+    emu.set_haptic_effect(gui.get_haptic_waveform());
     emu.play_haptic_effect();
 
     gui.pause();
@@ -120,9 +119,6 @@ extern "C" void app_main(void) {
     logger.info("Done playing, resuming gui...");
 
     logger.debug("Task table:\n{}", espp::TaskMonitor::get_latest_info_table());
-
-    // need to reset to control the whole screen
-    espp::St7789::clear(0,0,320,240);
 
     gui.resume();
     display->force_refresh();

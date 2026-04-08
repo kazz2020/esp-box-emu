@@ -4,9 +4,11 @@
 
 #include "display.hpp"
 
+#include "doom_cart.hpp"
 #include "gbc_cart.hpp"
-#include "nes_cart.hpp"
 #include "genesis_cart.hpp"
+#include "msx_cart.hpp"
+#include "nes_cart.hpp"
 #include "sms_cart.hpp"
 
 std::unique_ptr<Cart> make_cart(const RomInfo& info, std::shared_ptr<espp::Display<lv_color16_t>> display) {
@@ -36,6 +38,20 @@ std::unique_ptr<Cart> make_cart(const RomInfo& info, std::shared_ptr<espp::Displ
   case Emulator::SEGA_MEGA_DRIVE:
     return std::make_unique<GenesisCart>(Cart::Config{
         .info = info,
+        .display = display,
+        .verbosity = espp::Logger::Verbosity::WARN
+      });
+  case Emulator::MSX:
+    return std::make_unique<MsxCart>(Cart::Config{
+        .info = info,
+        .copy_romdata = false,
+        .display = display,
+        .verbosity = espp::Logger::Verbosity::WARN
+      });
+  case Emulator::DOOM:
+    return std::make_unique<DoomCart>(Cart::Config{
+        .info = info,
+        .copy_romdata = false,
         .display = display,
         .verbosity = espp::Logger::Verbosity::WARN
       });

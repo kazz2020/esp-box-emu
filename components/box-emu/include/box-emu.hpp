@@ -12,7 +12,9 @@
 
 #include <tinyusb.h>
 #include <class/msc/msc.h>
-#include <tusb_msc_storage.h>
+#include <tinyusb_msc.h>
+
+#include <tinyusb_default_config.h>
 
 #include "esp-box.hpp"
 #include "event_manager.hpp"
@@ -36,6 +38,7 @@
 #include "video_setting.hpp"
 
 #include "make_color.h"
+#include "pool_allocator.h"
 
 class BoxEmu : public espp::BaseComponent {
 public:
@@ -126,6 +129,7 @@ public:
   /////////////////////////////////////////////////////////////////////////////
 
   bool initialize_memory();
+  void deinitialize_memory();
   size_t copy_file_to_romdata(const std::string& filename);
   uint8_t *romdata() const;
 
@@ -151,8 +155,10 @@ public:
   /////////////////////////////////////////////////////////////////////////////
 
   bool initialize_video();
+  void clear_screen();
   void display_size(size_t width, size_t height);
   void native_size(size_t width, size_t height, int pitch = -1);
+  const uint16_t *palette() const;
   void palette(const uint16_t *palette, size_t size = 256);
   void push_frame(const void* frame);
   VideoSetting video_setting() const;
@@ -184,7 +190,6 @@ protected:
   bool is_native() const;
   int x_offset() const;
   int y_offset() const;
-  const uint16_t *palette() const;
   bool video_task_callback(std::mutex &m, std::condition_variable &cv, bool &task_notified);
 
   class InputBase {
@@ -364,6 +369,7 @@ protected:
   // usb
   std::atomic<bool> usb_enabled_{false};
   usb_phy_handle_t jtag_phy_;
+  tinyusb_msc_storage_handle_t msc_storage_handle_{nullptr};
 };
 
 // for libfmt printing of the BoxEmu::Version enum

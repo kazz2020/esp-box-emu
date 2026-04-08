@@ -1,12 +1,12 @@
 # The following lines of boilerplate have to be in your project's CMakeLists
 # in this exact order for cmake to work correctly
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.15)
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
 # add the component directories that we want to use
 set(EXTRA_COMPONENT_DIRS
-  "components/espp/components"
+  # "components/espp/components"
 )
 
 # add compile definition ARDUINO_ARCH_ESP32, enabling jpegdec simd support
@@ -21,17 +21,17 @@ set(GBC_COMPONENTS "gbc")
 ### SMS ###
 set(SMS_COMPONENTS "sms")
 
-### SNES ###
-# set(SNES_COMPONENTS "snes")
-
 ### MSX ###
-# set(MSX_COMPONENTS "msx")
+set(MSX_COMPONENTS "msx")
 
 ### GENESIS ###
 set(GENESIS_COMPONENTS "genesis")
 
 ### DOOM ###
-# set(DOOM_COMPONENTS "doom")
+set(DOOM_COMPONENTS "doom")
+
+### SNES ###
+# set(SNES_COMPONENTS "snes")
 
 add_compile_definitions(BOARD_HAS_PSRAM)
 

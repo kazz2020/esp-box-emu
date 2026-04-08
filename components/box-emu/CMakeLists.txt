@@ -10,6 +10,7 @@ idf_component_register(
   "hal"
   "usb"
   "esp_tinyusb"
+  "lvgl"
   "codec"
   "adc"
   "aw9523"
@@ -30,4 +31,5 @@ idf_component_register(
   "statistics"
   "max1704x"
   "esp-box"
+  "pool_allocator"
   )

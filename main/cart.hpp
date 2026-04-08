@@ -3,6 +3,9 @@
 #include <filesystem>
 #include <memory>
 #include <mutex>
+#include <span>
+#include <string>
+#include <vector>
 
 #include "display.hpp"
 #include "logger.hpp"
@@ -20,10 +23,11 @@
 /// - romdata
 class Cart {
 public:
-  using Pixel = lv_color16_t;
+  using Pixel = BoxEmu::Pixel;
   /// Configuration for the Cart class
   struct Config {
     RomInfo info; ///< rom info
+    bool copy_romdata = true; ///< copy the romdata to the cart
     std::shared_ptr<espp::Display<Pixel>> display; ///< display pointer for the menu
     espp::Logger::Verbosity verbosity = espp::Logger::Verbosity::WARN; ///< verbosity level for the logger
   };
@@ -37,10 +41,19 @@ public:
       logger_({.tag = "Cart", .level = config.verbosity}) {
     logger_.info("ctor");
     // clear the screen
-    espp::St7789::clear(0,0,320,240);
+    BoxEmu::get().clear_screen();
+
+    auto &box = BoxEmu::get();
+
     // copy the romdata
-    rom_size_bytes_ = BoxEmu::get().copy_file_to_romdata(get_rom_filename());
-    romdata_ = BoxEmu::get().romdata();
+    if (config.copy_romdata) {
+      logger_.info("Copying romdata...");
+      rom_size_bytes_ = BoxEmu::get().copy_file_to_romdata(get_rom_filename());
+      romdata_ = box.romdata();
+    } else {
+      logger_.info("Not copying romdata...");
+    }
+
     // create the menu
     menu_ = std::make_unique<Menu>(Menu::Config{
           .paused_image_path = get_paused_image_path(),
@@ -122,14 +135,7 @@ public:
     uint16_t width = size.first;
     uint16_t height = size.second;
     logger_.debug("frame buffer size: {}x{}", width, height);
-    std::vector<uint8_t> frame = get_video_buffer();
-
-    // save it to the file
-    std::ofstream file(filename.data(), std::ios::binary);
-    if (!file.is_open()) {
-      logger_.error("Failed to open file: {}", filename);
-      return false;
-    }
+    std::span<uint8_t> frame = get_video_buffer();
 
     uint8_t header[4] = {
       (uint8_t)(width >> 8),
@@ -137,9 +143,15 @@ public:
       (uint8_t)(height >> 8),
       (uint8_t)(height & 0xFF)
     };
+
+    // save it to the file
+    std::ofstream file(filename.data(), std::ios::binary);
+    if (!file.is_open()) {
+      logger_.error("Failed to open file: {}", filename);
+      return false;
+    }
     // write the header
     file.write((char*)header, sizeof(header));
-
     // write the data
     file.write((char*)frame.data(), frame.size());
     // make sure to close the file
@@ -155,7 +167,7 @@ public:
   virtual bool run() {
     running_ = true;
     // handle touchpad so we can know if the user presses the menu
-    auto touch = espp::EspBox::get().touchpad_data();
+    auto touch = BoxEmu::Bsp::get().touchpad_data();
     bool btn_state = touch.btn_state;
     // also get the gamepad input state so we can know if the user presses the
     // start/select buttons together to bring up the menu
@@ -177,7 +189,7 @@ public:
         std::this_thread::sleep_for(100ms);
       }
       // make sure to clear the screen before we resume the game
-      espp::St7789::clear(0,0,320,240);
+      BoxEmu::get().clear_screen();
       // only run the post_menu if we are still running
       if (running_)
         post_menu();
@@ -186,8 +198,8 @@ public:
   }
 
 protected:
-  static constexpr size_t SCREEN_WIDTH = 320;
-  static constexpr size_t SCREEN_HEIGHT = 240;
+  static constexpr size_t SCREEN_WIDTH = BoxEmu::lcd_width();
+  static constexpr size_t SCREEN_HEIGHT = BoxEmu::lcd_height();
   static constexpr std::string FS_PREFIX = BoxEmu::mount_point;
   static constexpr std::string SAVE_DIR = "/saves/";
 
@@ -240,10 +252,10 @@ protected:
     return std::make_pair(320, 240);
   }
 
-  virtual std::vector<uint8_t> get_video_buffer() const {
+  virtual std::span<uint8_t> get_video_buffer() const {
     // subclass should override this method to return the frame buffer
     // as a vector of uint16_t
-    return std::vector<uint8_t>();
+    return std::span<uint8_t>();
   }
 
   // subclass should override these methods
@@ -268,12 +280,16 @@ protected:
     }
   }
 
+  int get_selected_save_slot() const {
+    return menu_->get_selected_slot();
+  }
+
   std::string get_save_path(bool bypass_exist_check=false) const {
     namespace fs = std::filesystem;
     auto save_path =
       savedir_ + "/" +
       fs::path(get_rom_filename()).stem().string() +
-      fmt::format("_{}", menu_->get_selected_slot()) +
+      fmt::format("_{}", get_selected_save_slot()) +
       get_save_extension();
     if (bypass_exist_check || fs::exists(save_path)) {
       return save_path;

@@ -31,9 +31,9 @@ void hw_interrupt(byte i, byte mask)
 	R_IF |= i & (hw.ilines ^ i);
 
 	/* FIXME - is this correct? not sure the docs understand... */
-	if ((R_IF & (R_IF ^ oldif) & R_IE) && cpu.ime) cpu.halt = 0;
-	/* if ((i & (hw.ilines ^ i) & R_IE) && cpu.ime) cpu.halt = 0; */
-	/* if ((i & R_IE) && cpu.ime) cpu.halt = 0; */
+	if ((R_IF & (R_IF ^ oldif) & R_IE) && cpu->ime) cpu->halt = 0;
+	/* if ((i & (hw.ilines ^ i) & R_IE) && cpu->ime) cpu->halt = 0; */
+	/* if ((i & R_IE) && cpu->ime) cpu->halt = 0; */
 
 	hw.ilines &= ~mask;
 	hw.ilines |= i;
@@ -54,7 +54,7 @@ void hw_dma(byte b)
 
 	a = ((addr)b) << 8;
 	for (i = 0; i < 160; i++, a++)
-		lcd.oam.mem[i] = readb(a);
+		lcd->oam.mem[i] = readb(a);
 }
 
 

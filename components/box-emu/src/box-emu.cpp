@@ -114,7 +114,7 @@ bool BoxEmu::initialize_sdcard() {
   memset(&mount_config, 0, sizeof(mount_config));
   mount_config.format_if_mount_failed = false;
   mount_config.max_files = 5;
-  mount_config.allocation_unit_size = 16 * 1024;
+  mount_config.allocation_unit_size = 2 * 1024;
 
   // Use settings defined above to initialize SD card and mount FAT filesystem.
   // Note: esp_vfs_fat_sdmmc/sdspi_mount is all-in-one convenience functions.
@@ -136,7 +136,7 @@ bool BoxEmu::initialize_sdcard() {
   bus_cfg.sclk_io_num = sdcard_sclk;
   bus_cfg.quadwp_io_num = -1;
   bus_cfg.quadhd_io_num = -1;
-  bus_cfg.max_transfer_sz = 8192;
+  bus_cfg.max_transfer_sz = 4096;
   spi_host_device_t host_id = (spi_host_device_t)host.slot;
   ret = spi_bus_initialize(host_id, &bus_cfg, SDSPI_DEFAULT_DMA);
   if (ret != ESP_OK) {
@@ -182,6 +182,8 @@ sdmmc_card_t *BoxEmu::sdcard() const {
 // Memory
 /////////////////////////////////////////////////////////////////////////////
 
+static constexpr size_t memory_size = 4*1024*1024;
+
 extern "C" uint8_t *osd_getromdata() {
   auto &emu = BoxEmu::get();
   return emu.romdata();
@@ -195,13 +197,21 @@ bool BoxEmu::initialize_memory() {
 
   logger_.info("Initializing memory (romdata)");
   // allocate memory for the ROM and make sure it's on the SPIRAM
-  romdata_ = (uint8_t*)heap_caps_malloc(4*1024*1024, MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
+  romdata_ = (uint8_t*)heap_caps_malloc(memory_size, MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
   if (romdata_ == nullptr) {
     logger_.error("Couldn't allocate memory for ROM!");
     return false;
   }
 
   return true;
+}
+
+void BoxEmu::deinitialize_memory() {
+  if (romdata_) {
+    logger_.info("Deinitializing memory (romdata)");
+    free(romdata_);
+    romdata_ = nullptr;
+  }
 }
 
 size_t BoxEmu::copy_file_to_romdata(const std::string& filename) {
@@ -467,6 +477,11 @@ bool BoxEmu::initialize_video() {
   return true;
 }
 
+void BoxEmu::clear_screen() {
+  static int buffer = 0;
+  xQueueSend(video_queue_, &buffer, 10);
+}
+
 void BoxEmu::display_size(size_t width, size_t height) {
   display_width_ = width;
   display_height_ = height;
@@ -635,30 +650,47 @@ bool BoxEmu::initialize_usb() {
   usb_del_phy(jtag_phy_);
 
   fmt::print("USB MSC initialization\n");
-  // register the callback for the storage mount changed event.
-  tinyusb_msc_sdmmc_config_t config_sdmmc = {
-    .card = card,
-    .callback_mount_changed = nullptr,
-    .callback_premount_changed = nullptr,
-    .mount_config = {
-      .format_if_mount_failed = false,
-      .max_files = 5,
-      .allocation_unit_size = 16 * 1024, // sector size is 512 bytes, this should be between sector size and (128 * sector size). Larger means higher read/write performance and higher overhead for small files.
-      .disk_status_check_enable = false, // true if you see issues or are unmounted properly; slows down I/O
-    },
+  esp_vfs_fat_mount_config_t fat_mount_config = {
+    .format_if_mount_failed = false,
+    .max_files = 5,
+    .allocation_unit_size = 2 * 1024, // sector size is 512 bytes, this should be between sector size and (128 * sector size). Larger means higher read/write performance and higher overhead for small files.
+    .disk_status_check_enable = false, // true if you see issues or are unmounted properly; slows down I/O
   };
-  ESP_ERROR_CHECK(tinyusb_msc_storage_init_sdmmc(&config_sdmmc));
+
+  tinyusb_msc_fatfs_config_t config_msc = {
+    .base_path = (char*)mount_point,
+    .config = fat_mount_config,
+    .do_not_format = true,
+    .format_flags = 0,
+  };
+
+  tinyusb_msc_storage_config_t msc_storage_config = {
+    .medium = {
+      .card = card,
+    },
+    .fat_fs = config_msc,
+    .mount_point = TINYUSB_MSC_STORAGE_MOUNT_USB,
+  };
+
+  ESP_ERROR_CHECK(tinyusb_msc_new_storage_sdmmc(&msc_storage_config, &msc_storage_handle_));
+  // register the callback for the storage mount changed event.
   // ESP_ERROR_CHECK(tinyusb_msc_register_callback(TINYUSB_MSC_EVENT_MOUNT_CHANGED, storage_mount_changed_cb));
 
   // initialize the tinyusb stack
   fmt::print("USB MSC initialization\n");
-  tinyusb_config_t tusb_cfg;
-  memset(&tusb_cfg, 0, sizeof(tusb_cfg));
-  tusb_cfg.device_descriptor = &descriptor_config;
-  tusb_cfg.string_descriptor = string_desc_arr;
-  tusb_cfg.string_descriptor_count = sizeof(string_desc_arr) / sizeof(string_desc_arr[0]);
-  tusb_cfg.external_phy = false;
-  tusb_cfg.configuration_descriptor = desc_configuration;
+  // no device_event_handler for tud_mount and tud_unmount callbacks
+  tinyusb_config_t tusb_cfg = TINYUSB_DEFAULT_CONFIG();
+  tusb_cfg.task = TINYUSB_TASK_CUSTOM(4096 /*size */, 4 /* priority */,
+                                      0 /* affinity: 0 - CPU0, 1 - CPU1 ... */);
+  tusb_cfg.descriptor.device = &descriptor_config;
+  tusb_cfg.descriptor.string = string_desc_arr;
+  tusb_cfg.descriptor.string_count =
+      sizeof(string_desc_arr) / sizeof(string_desc_arr[0]);
+  tusb_cfg.descriptor.full_speed_config = desc_configuration;
+  tusb_cfg.phy.skip_setup = false; // was external-phy = false
+  tusb_cfg.phy.self_powered = false;
+  tusb_cfg.phy.vbus_monitor_io = -1;
+
   ESP_ERROR_CHECK(tinyusb_driver_install(&tusb_cfg));
   fmt::print("USB MSC initialization DONE\n");
   usb_enabled_ = true;
@@ -671,8 +703,16 @@ bool BoxEmu::deinitialize_usb() {
     logger_.warn("USB MSC not initialized");
     return false;
   }
+  esp_err_t err;
   logger_.info("USB MSC deinitialization");
-  auto err = tinyusb_driver_uninstall();
+  // deinit + delete the msc storage handle
+  err = tinyusb_msc_delete_storage(msc_storage_handle_);
+  if (err != ESP_OK) {
+    logger_.error("tinyusb_msc_delete_storage failed: {}", esp_err_to_name(err));
+    return false;
+  }
+  logger_.info("USB deinitialization");
+  err = tinyusb_driver_uninstall();
   if (err != ESP_OK) {
     logger_.error("tinyusb_driver_uninstall failed: {}", esp_err_to_name(err));
     return false;
@@ -717,13 +757,29 @@ bool BoxEmu::video_task_callback(std::mutex &m, std::condition_variable& cv, boo
     return false;
   }
   static constexpr int num_lines_to_write = num_rows_in_framebuffer;
-  auto &box = Bsp::get();
+  static auto &box = Bsp::get();
+  static const uint16_t *vram0 = (uint16_t*)box.vram0();
+  static const uint16_t *vram1 = (uint16_t*)box.vram1();
   static uint16_t vram_index = 0; // has to be static so that it persists between calls
   const int _x_offset = x_offset();
   const int _y_offset = y_offset();
   const uint16_t* _palette = palette();
-  uint16_t *vram0 = (uint16_t*)box.vram0();
-  uint16_t *vram1 = (uint16_t*)box.vram1();
+  // special case: if _frame_ptr is null, then we ignore all palette, scaling,
+  // etc. and simply fill the screen with 0
+  if (_frame_ptr == nullptr) {
+    for (int y=0; y<lcd_height(); y+= num_lines_to_write) {
+      Pixel* _buf = (Pixel*)((uint32_t)vram0 * (vram_index ^ 0x01) + (uint32_t)vram1 * vram_index);
+      vram_index = vram_index ^ 0x01;
+      int num_lines = std::min<int>(num_lines_to_write, lcd_height()-y);
+      // memset the buffer to 0
+      memset(_buf, 0, lcd_width() * num_lines * sizeof(Pixel));
+      box.write_lcd_frame(0, y + _y_offset, lcd_width(), num_lines, (uint8_t*)&_buf[0]);
+    }
+
+    // now return
+    return false;
+  }
+
   if (is_native()) {
     if (has_palette()) {
       for (int y=0; y<display_height_; y+= num_lines_to_write) {

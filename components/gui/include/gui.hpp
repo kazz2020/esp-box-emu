@@ -6,7 +6,6 @@
 #include <vector>
 
 #include "event_manager.hpp"
-#include "display.hpp"
 #include "jpeg.hpp"
 #include "high_resolution_timer.hpp"
 #include "logger.hpp"
@@ -101,6 +100,10 @@ public:
     focus_rommenu();
     task_.periodic(16 * 1000);
     paused_ = false;
+  }
+
+  int get_haptic_waveform() const {
+    return haptic_waveform_;
   }
 
   void set_haptic_waveform(int new_waveform) {
